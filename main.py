@@ -4,6 +4,7 @@ import argparse
 from src.config import GPTConfig
 from src.dataset import ShakespeareDataset
 from src.model import QuantumGPT
+from tqdm import tqdm
 
 # Set seed
 torch.manual_seed(1337)
@@ -41,12 +42,14 @@ def train(config):
 
     # Training Loop
     best_val_loss = float('inf')
+
+    pbar = tqdm(range(config.max_iters), desc="Training Progress")
     
-    for iter in range(config.max_iters):
+    for iter in pbar:
         # Eval
         if iter % config.eval_interval == 0 or iter == config.max_iters - 1:
             losses = estimate_loss()
-            print(f"Step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+            pbar.set_description(f"Step {iter} | Train Loss: {losses['train']:.4f} | Val Loss: {losses['val']:.4f}")
             
             if losses['val'] < best_val_loss:
                 best_val_loss = losses['val']
@@ -58,6 +61,9 @@ def train(config):
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
+
+        if iter % 10 == 0:
+            pbar.set_postfix(loss=f"{loss.item():.4f}")
 
     # Save model
     os.makedirs("checkpoints", exist_ok=True)
