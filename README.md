@@ -5,7 +5,7 @@
 ![PennyLane](https://img.shields.io/badge/PennyLane-0.30%2B-yellow)
 ![MIT](https://img.shields.io/badge/license-MIT-green)
 
-A hybrid Quantum-Classical implementation of a Generative Pre-trained Transformer (GPT). 
+A hybrid Quantum-Classical implementation of a Generative Pre-trained Transformer (GPT).
 This project adapts Andrej Karpathy's `nanoGPT` architecture by replacing classical linear layers in the Self-Attention mechanism with **Variational Quantum Circuits (VQC)** using PennyLane.
 
 ## 🚀 Scientific Concept
@@ -53,11 +53,11 @@ Clone the repository:
 ```bash
 git clone https://github.com/lorenzomaiuri-dev/quantum-gpt.git
 cd quantum-transformer
-```  
-Install dependencies:     
+```
+Install dependencies:
 ```bash
 pip install -r requirements.txt
-```    
+```
 
 ## ⚡ Usage
 ### Training
@@ -65,7 +65,7 @@ pip install -r requirements.txt
 To train the model on the Shakespeare dataset (included in data/):
 ```bash
 python main.py --mode train
-```  
+```
 Note: Quantum simulation is CPU-intensive. The default configuration uses a "Quantum Bottleneck" (4-8 qubits) to keep training times feasible on consumer hardware.
 
 ### Generation
@@ -73,7 +73,7 @@ Note: Quantum simulation is CPU-intensive. The default configuration uses a "Qua
 To generate text using the trained checkpoint:
 ```bash
 python main.py --mode generate
-```    
+```
 
 ## ⚙️ Configuration
 
@@ -83,7 +83,7 @@ You can modify hyperparameters in src/config.py:
 USE_QUANTUM = True      # Set False to use standard Linear Layers
 N_QUBITS = 4            # Number of qubits per head
 N_QLAYERS = 2           # Depth of the quantum circuit
-```      
+```
 
 ## 🧠 Architecture Details
 
