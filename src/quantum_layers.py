@@ -13,6 +13,7 @@ class QuantumLayerAdapter(nn.Module):
         self.dev = qml.device(q_device, wires=n_qubits)
         
         # Create Quantum Circuit
+        # TODO: PENNYLANE OPTIMIZATION FOR AUTOMATIC PARAMETERS
         @qml.qnode(self.dev, interface="torch")
         def _circuit(inputs, weights):
             qml.templates.AngleEmbedding(inputs, wires=range(n_qubits))
