@@ -35,8 +35,10 @@ def train(config, model_name, dataset_name):
     print(f"To view logs, run: tensorboard --logdir=experiments")
     
     # Save Configuration immediately
+    config_dict = asdict(config)
+    config_dict['n_qubits'] = config.n_qubits
     with open(os.path.join(run_dir, "config.json"), "w") as f:
-        json.dump(asdict(config), f, indent=4)
+        json.dump(asdict(config_dict), f, indent=4)
 
     # Dataset setup
     dataset_path = os.path.join("data", f"{dataset_name}")
