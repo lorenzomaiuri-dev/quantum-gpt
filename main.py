@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 # Set seed
 torch.manual_seed(1337)
+torch.cuda.empty_cache()
 
 def train(config):
     print(f"--- Starting Training ---")
@@ -105,8 +106,8 @@ def generate(config, max_new_tokens=500):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Quantum Transformer Runner")
-    parser.add_argument('--mode', type=str, required=True, choices=['train', 'generate'], 
-                        help="Choose 'train' to train the model or 'generate' to create text.")
+    parser.add_argument('--mode', type=str, required=True, choices=['train', 'generate', 'full'], 
+                        help="Choose 'train' to train the model or 'generate' to create text or full for both")
     
     args = parser.parse_args()
     cfg = GPTConfig()
@@ -114,4 +115,7 @@ if __name__ == "__main__":
     if args.mode == 'train':
         train(cfg)
     elif args.mode == 'generate':
+        generate(cfg)
+    elif args.mode == 'full':
+        train(cfg)
         generate(cfg)
