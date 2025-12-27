@@ -13,7 +13,7 @@ class CharTokenizer:
     def decode(self, l):
         return ''.join([self.itos[i] for i in l])
 
-class ShakespeareDataset:
+class InputDataset:
     def __init__(self, file_path, block_size, device):
         with open(file_path, 'r', encoding='utf-8') as f:
             self.text = f.read()
