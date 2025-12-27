@@ -1,5 +1,5 @@
 import torch
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 @dataclass
 class GPTConfig:
@@ -13,7 +13,7 @@ class GPTConfig:
     n_embd: int = 64              # Total dimension of the token embeddings (hidden size)
     n_head: int = 4               # Number of attention heads in the Multi-Head Attention mechanism
     n_layer: int = 4              # Number of Transformer blocks (layers) in the model
-    dropout = 0.0                 # Probability of dropping neurons during training to prevent overfitting
+    dropout: float = 0.0                 # Probability of dropping neurons during training to prevent overfitting
     
     # Quantum config
     use_quantum: bool = False       # Toggle to enable or disable quantum-enhanced layers
@@ -24,3 +24,8 @@ class GPTConfig:
     def n_qubits(self):
         # Calculates the number of qubits, typically equal to the dimension of a single attention head
         return self.n_embd // self.n_head
+    
+    def to_dict(self):
+        out = asdict(self)
+        out['n_qubits'] = self.n_qubits
+        return out
