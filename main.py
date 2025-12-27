@@ -1,6 +1,7 @@
 import os
 import torch
 import argparse
+import importlib
 from src.config.default import GPTConfig
 from src.dataset import InputDataset
 from src.model import QuantumGPT
@@ -114,10 +115,27 @@ if __name__ == "__main__":
                         help="Name of the model (used for checkpoint filename)")
     parser.add_argument('--dataset', type=str, default='input.txt', 
                         help="Name to the dataset text file")
+    parser.add_argument('--config', type=str, default='default', 
+                        help="The config file to use")
     
     args = parser.parse_args()
     
-    cfg = GPTConfig()
+    # Config loading
+    try:
+        # Construct the module path (e.g., "src.config.large")
+        config_module_path = f"src.config.{args.config}"
+        config_module = importlib.import_module(config_module_path)
+        
+        # Get the GPTConfig class from that module
+        GPTConfig = getattr(config_module, "GPTConfig")
+        cfg = GPTConfig()
+        
+    except ImportError:
+        print(f"Error: Could not find config file 'src/config/{args.config}.py'")
+        exit(1)
+    except AttributeError:
+        print(f"Error: Config file '{args.config}.py' does not contain a 'GPTConfig' class")
+        exit(1)
 
     if args.mode == 'train':
         train(cfg, args.name, args.dataset)
