@@ -166,7 +166,10 @@ def generate(config, run_dir, dataset_name, max_new_tokens=500):
 
     if not os.path.exists(load_path):
         load_path = os.path.join(run_dir, "final_model.pth")
-
+        print('## using final_model')
+    else:
+        print('## using best_model')
+        
     model.load_state_dict(
         torch.load(load_path, map_location=config.device, weights_only=True)  # nosec B614
     )
@@ -201,22 +204,31 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Config loading
-    try:
-        config_module = importlib.import_module(f"src.config.{args.config}")
-        GPTConfig = getattr(config_module, "GPTConfig")
-        cfg = GPTConfig()
-    except Exception as e:
-        print(f"Error loading config: {e}")
-        exit(1)
-
     if args.mode == "train":
+        try:
+            config_module = importlib.import_module(f"src.config.{args.config}")
+            GPTConfig = getattr(config_module, "GPTConfig")
+            cfg = GPTConfig()
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            exit(1)
         train(cfg, args.name, args.dataset)
     elif args.mode == "generate":
+        try:
+            config_module = importlib.import_module(f"src.config.default")
+            GPTConfig = getattr(config_module, "GPTConfig")
+            cfg = GPTConfig()
+            # Loads the config from the run trace
+            with open(f'{args.run_dir}/config.json', 'r') as f:
+                for key, prop in json.load(f).items():
+                    setattr(cfg, key, prop)
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            exit(1)
         if not args.run_dir:
             print("Provide --run_dir")
         else:
             generate(cfg, args.run_dir, args.dataset)
-    elif args.mode == "full":
-        run_folder = train(cfg, args.name, args.dataset)
-        generate(cfg, run_folder, args.dataset)
+    # elif args.mode == "full":
+    #     run_folder = train(cfg, args.name, args.dataset)
+    #     generate(cfg, run_folder, args.dataset)
