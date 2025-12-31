@@ -173,7 +173,7 @@ class QuantumGPT(nn.Module):
 
         return logits, loss
 
-    def generate(self, idx, max_new_tokens):
+    def generate(self, idx, max_new_tokens, print_in_place=False, decode_function=None):
         """
         Autoregressive generation loop.
         Predicts the next token based on the context, one by one.
@@ -197,4 +197,7 @@ class QuantumGPT(nn.Module):
             # Append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1)
 
+            # Print generated token
+            if print_in_place:
+                print(decode_function(idx_next[0].tolist()), end='', flush=True)
         return idx
