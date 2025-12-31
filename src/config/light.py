@@ -5,12 +5,12 @@ from dataclasses import dataclass, asdict
 @dataclass
 class GPTConfig:
     batch_size: int = (
-        16  # Number of independent sequences processed in parallel per training step
+        4  # Number of independent sequences processed in parallel per training step
     )
     block_size: int = (
-        32  # Maximum context length: the number of tokens the model can look back at
+        16  # Maximum context length: the number of tokens the model can look back at
     )
-    max_iters: int = 5000  # Total number of training iterations (steps)
+    max_iters: int = 1000  # Total number of training iterations (steps)
     eval_interval: int = 100  # How often (in iterations) to run the evaluation loop
     learning_rate: float = (
         1e-3  # The step size used by the optimizer for weight updates
@@ -19,9 +19,9 @@ class GPTConfig:
         "cuda" if torch.cuda.is_available() else "cpu"
     )  # Hardware used for computation (GPU or CPU)
     eval_iters: int = 200  # Number of batches to average over when estimating the loss during evaluation
-    n_embd: int = 64  # Total dimension of the token embeddings (hidden size)
+    n_embd: int = 32  # Total dimension of the token embeddings (hidden size)
     n_head: int = 4  # Number of attention heads in the Multi-Head Attention mechanism
-    n_layer: int = 4  # Number of Transformer blocks (layers) in the model
+    n_layer: int = 2  # Number of Transformer blocks (layers) in the model
     dropout: float = (
         0.0  # Probability of dropping neurons during training to prevent overfitting
     )
@@ -43,5 +43,5 @@ class GPTConfig:
 
     def to_dict(self):
         out = asdict(self)
-        # out["n_qubits"] = self.n_qubits
+        out["n_qubits"] = self.n_qubits
         return out

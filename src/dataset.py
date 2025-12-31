@@ -1,5 +1,5 @@
 import torch
-
+import json
 
 class CharTokenizer:
     """
@@ -8,14 +8,14 @@ class CharTokenizer:
     string-to-integer (encode) and integer-to-string (decode) conversions.
     """
 
-    def __init__(self, text):
-        # Find all unique characters in the text to build the vocabulary
-        self.chars = sorted(list(set(text)))
-        self.vocab_size = len(self.chars)
+    def __init__(self, data=''):
+        if data:
+            self.chars = sorted(list(set(data)))
+            self.vocab_size = len(self.chars)
 
-        # Create mappings: string-to-index (stoi) and index-to-string (itos)
-        self.stoi = {ch: i for i, ch in enumerate(self.chars)}
-        self.itos = {i: ch for i, ch in enumerate(self.chars)}
+            # Create mappings: string-to-index (stoi) and index-to-string (itos)
+            self.stoi = {ch: i for i, ch in enumerate(self.chars)}
+            self.itos = {i: ch for i, ch in enumerate(self.chars)}
 
     def encode(self, strings):
         """Converts a string into a list of integers."""
@@ -24,7 +24,14 @@ class CharTokenizer:
     def decode(self, integers):
         """Converts a list of integers back into a string."""
         return "".join([self.itos[i] for i in integers])
-
+    
+    def to_dict(self):
+        return self.__dict__
+    
+    def from_dict(self, data):
+        data['itos'] = {int(k) : v for k,v in data['itos'].items()}
+        data['stoi'] = {k : int(v) for k,v in data['stoi'].items()}
+        self.__dict__.update(data)
 
 class InputDataset:
     """
@@ -32,22 +39,28 @@ class InputDataset:
     and generating batches for training/validation.
     """
 
-    def __init__(self, file_path, block_size, device):
-        # Read the entire text file
-        with open(file_path, "r", encoding="utf-8") as f:
-            self.text = f.read()
+    def __init__(self, file_path, block_size, device, dictionary=''):
+        if dictionary:  # generate
+            # Initialize the tokenizer and convert the whole text to a tensor
+            self.tokenizer = CharTokenizer()
+            with open(dictionary, "r", encoding="utf-8") as f:
+                self.tokenizer.from_dict(json.load(f))
+        else:           # train
+            # Read the entire text file
+            with open(file_path, "r", encoding="utf-8") as f:
+                self.text = f.read()
+            # Initialize the tokenizer and convert the whole text to a tensor
+            self.tokenizer = CharTokenizer(self.text)
+            self.data = torch.tensor(self.tokenizer.encode(self.text), dtype=torch.long)
 
-        # Initialize the tokenizer and convert the whole text to a tensor
-        self.tokenizer = CharTokenizer(self.text)
-        self.data = torch.tensor(self.tokenizer.encode(self.text), dtype=torch.long)
 
-        self.block_size = block_size
-        self.device = device
-
-        # Create a Train/Validation split (90% training, 10% validation)
-        n = int(0.9 * len(self.data))
-        self.train_data = self.data[:n]
-        self.val_data = self.data[n:]
+            # Create a Train/Validation split (90% training, 10% validation)
+            n = int(0.9 * len(self.data))
+            self.train_data = self.data[:n]
+            self.val_data = self.data[n:]
+            
+            self.block_size = block_size
+            self.device = device
 
     def get_batch(self, split, batch_size):
         """

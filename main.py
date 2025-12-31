@@ -37,9 +37,8 @@ def train(config, model_name, dataset_name):
     print("To view logs, run: tensorboard --logdir=experiments")
 
     # Save Configuration immediately
-    config_dict = config.to_dict()
     with open(os.path.join(run_dir, "config.json"), "w") as f:
-        json.dump(config_dict, f, indent=4)
+        json.dump(config.to_dict(), f, indent=4)
 
     # Dataset setup
     dataset_path = os.path.join("data", f"{dataset_name}")
@@ -47,6 +46,10 @@ def train(config, model_name, dataset_name):
         raise FileNotFoundError(f"Dataset file not found at {dataset_path}")
 
     dataset = InputDataset(dataset_path, config.block_size, config.device)
+
+    with open(os.path.join(run_dir, "dictionary.json"), "w") as f:
+        json.dump(dataset.tokenizer.to_dict(), f, indent=4)
+
     vocab_size = dataset.tokenizer.vocab_size
 
     # Create Model
@@ -156,17 +159,22 @@ def train(config, model_name, dataset_name):
     return run_dir
 
 
-def generate(config, run_dir, dataset_name, max_new_tokens=500):
+def generate(config, run_dir, dataset_name, max_new_tokens=500, print_in_place=False, hint='', seeds=''):
     print("\n--- Starting Generation ---")
     dataset_path = os.path.join("data", f"{dataset_name}")
-    dataset = InputDataset(dataset_path, config.block_size, config.device)
+    dataset = InputDataset(dataset_path, config.block_size, config.device, os.path.join(run_dir, "dictionary.json"))
+    
+    print(dataset.tokenizer.itos)
 
     model = QuantumGPT(config, dataset.tokenizer.vocab_size)
     load_path = os.path.join(run_dir, "best_model.pth")
 
     if not os.path.exists(load_path):
         load_path = os.path.join(run_dir, "final_model.pth")
-
+        print('## using final_model')
+    else:
+        print('## using best_model')
+        
     model.load_state_dict(
         torch.load(load_path, map_location=config.device, weights_only=True)  # nosec B614
     )
@@ -176,47 +184,106 @@ def generate(config, run_dir, dataset_name, max_new_tokens=500):
     context = torch.tensor(
         [dataset.tokenizer.encode("\n")], dtype=torch.long, device=config.device
     )
-    out_tokens = m.generate(context, max_new_tokens=max_new_tokens)[0].tolist()
-    decoded_text = dataset.tokenizer.decode(out_tokens)
 
-    with open(
-        os.path.join(run_dir, "generated_sample.txt"), "w", encoding="utf-8"
-    ) as f:
-        f.write(decoded_text)
+    def do_generate(seed):
+        if print_in_place:
+            print(hint, end='')
+        torch.manual_seed(int(seed))
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(int(seed))
+        out_tokens = m.generate(context, max_new_tokens=max_new_tokens, print_in_place=print_in_place, decode_function=dataset.tokenizer.decode)[0].tolist()
+        decoded_text = dataset.tokenizer.decode(out_tokens)
+        return decoded_text
+    
+    res = []
+    # with ProcessPoolExecutor() as executor:
+    for i in range(len(seeds)):
+        # res = list(executor.map(do_generate, seeds))
+        res.append(do_generate(seeds[i]))
+        if print_in_place:
+            print('\n----------------------------------------------\n')
 
-    print("\n--- GENERATED TEXT ---")
-    print(decoded_text)
-    print(f"\nOutput saved to {run_dir}/generated_sample.txt")
+    if not print_in_place:
+        print(f"\n--- GENERATED TEXT{"S" if len(seeds) > 1 else ""} ---")
+    for i in range(len(res)):
+        if not print_in_place:
+            print('-- ', seeds[i], ' --\n', res[i])
+        os.makedirs(os.path.join(run_dir, 'generated_samples'), exist_ok=True)
+        dir = os.path.join(run_dir, "generated_samples", hint+str(seeds[i])+'.txt')
+        with open(
+            dir , "w", encoding="utf-8"
+        ) as f:
+            f.write(res[i])
+        if not print_in_place:
+            print('\n')
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Quantum Transformer Runner")
     parser.add_argument(
-        "--mode", type=str, required=True, choices=["train", "generate", "full"]
+        "--mode", type=str, required=True, choices=["train", "generate"]
     )
     parser.add_argument("--name", type=str, default="quantum_gpt")
     parser.add_argument("--dataset", type=str, default="input.txt")
     parser.add_argument("--config", type=str, default="default")
     parser.add_argument("--run_dir", type=str, default=None)
+    parser.add_argument("--tokens", type=str, default="500")
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--seeds", type=str, default=None)
+    parser.add_argument("--generations", type=int, default=-1)
+    parser.add_argument("--print_in_place", action='store_true')		# just funy
+    parser.add_argument("--hint", type=str, default="", nargs='+')
 
     args = parser.parse_args()
-
-    # Config loading
-    try:
-        config_module = importlib.import_module(f"src.config.{args.config}")
-        GPTConfig = getattr(config_module, "GPTConfig")
-        cfg = GPTConfig()
-    except Exception as e:
-        print(f"Error loading config: {e}")
-        exit(1)
+            
 
     if args.mode == "train":
+        try:
+            config_module = importlib.import_module(f"src.config.{args.config}")
+            GPTConfig = getattr(config_module, "GPTConfig")
+            cfg = GPTConfig()
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            exit(1)
         train(cfg, args.name, args.dataset)
+
     elif args.mode == "generate":
+        args.hint = ' '.join(args.hint)
+
+        if args.hint:
+            print(f"## hint: {args.hint}")
+
+        # setup seeds list for multi generation
+        seeds = args.seeds.split(",") if args.seeds else []
+        if len(seeds) == 0 and args.generations == -1:
+            seeds.append(args.seed)
+        if args.generations < 0:
+            args.generations *= -1
+        if len(seeds) < args.generations:
+            from random import randint
+            for _ in range(args.generations - len(seeds)):
+                seeds.append(str(randint(0, 0x7FFFFFFF)))
+        if len(seeds) != 1:
+            print("seeds:", seeds)
+            # if args.print_in_place:
+            # 	print("WARNING: Cannot run and print in place concurrent generations")
+            # 	args.print_in_place = False
+        
+        args.run_dir = "experiments/" + args.run_dir
+
+        try:
+            config_module = importlib.import_module(f"src.config.{args.config}")
+            GPTConfig = getattr(config_module, "GPTConfig")
+            cfg = GPTConfig()
+            # Loads the config from the run trace
+            with open(f'{args.run_dir}/config.json', 'r') as f:
+                for key, prop in json.load(f).items():
+                    setattr(cfg, key, prop)
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            exit(1)
         if not args.run_dir:
             print("Provide --run_dir")
+            
         else:
-            generate(cfg, args.run_dir, args.dataset)
-    elif args.mode == "full":
-        run_folder = train(cfg, args.name, args.dataset)
-        generate(cfg, run_folder, args.dataset)
+            generate(cfg, args.run_dir, args.dataset, int(args.tokens), print_in_place=args.print_in_place, hint=args.hint, seeds=seeds)
