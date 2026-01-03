@@ -63,7 +63,11 @@ def main():
         with open(os.path.join(args.run_dir, "config.json"), "r") as f:
             config_dict = json.load(f)
             for key, value in config_dict.items():
-                setattr(cfg, key, value)
+                # Check if the attribute exists and if it is a property (read-only)
+                is_property = isinstance(getattr(type(cfg), key, None), property)
+
+                if not is_property:
+                    setattr(cfg, key, value)
 
         if args.force_cpu:
             cfg.device = "cpu"

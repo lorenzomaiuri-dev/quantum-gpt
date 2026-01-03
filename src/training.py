@@ -21,21 +21,13 @@ class Trainer:
         self.writer = SummaryWriter(log_dir=self.run_dir)
 
         # Dataset initialization
-        dataset_path = os.path.join("data", dataset_name)
-        if not os.path.exists(dataset_path):
-            raise FileNotFoundError(f"Dataset file not found at {dataset_path}")
-
-        self.dataset = InputDataset(
-            dataset_path,
-            config.block_size,
-            config.device,
-            tokenizer=config.tokenizer_class,
-        )
+        self.dataset = InputDataset(config, dataset_name)
 
         # Model initialization
         self.model = QuantumGPT(config, self.dataset.tokenizer.vocab_size).to(
             config.device
         )
+
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=config.learning_rate
         )
@@ -49,6 +41,7 @@ class Trainer:
 
     def _log_architecture(self):
         """Saves model summary and architecture graph."""
+        # Use a batch size of 1 for the dummy input
         dummy_input = torch.zeros((1, self.config.block_size), dtype=torch.long).to(
             self.config.device
         )
@@ -57,21 +50,25 @@ class Trainer:
         try:
             self.writer.add_graph(self.model, dummy_input)
         except Exception as e:
-            print(f"Could not log model graph: {e}")
+            print(f"Could not log model graph to TensorBoard: {e}")
 
-        # Torchviz Graph
-        logits, _ = self.model(dummy_input)
-        dot = make_dot(logits, params=dict(self.model.named_parameters()))
-        dot.format = "png"
-        dot.render(os.path.join(self.run_dir, "model_architecture_graph"))
+        # Torchviz Graph (Visual PDF/PNG)
+        try:
+            logits, _ = self.model(dummy_input)
+            dot = make_dot(logits, params=dict(self.model.named_parameters()))
+            dot.format = "png"
+            dot.render(os.path.join(self.run_dir, "model_architecture_graph"))
+        except Exception as e:
+            print(f"Could not generate torchviz graph: {e}")
 
-        # Torchinfo Summary
+        # Torchinfo Summary (Text table)
         with open(os.path.join(self.run_dir, "model_summary_table.txt"), "w") as f:
             model_stats = summary(self.model, input_data=dummy_input, verbose=0)
             f.write(str(model_stats))
 
     @torch.no_grad()
     def estimate_loss(self):
+        """Averages loss over multiple batches to reduce noise during evaluation."""
         out = {}
         self.model.eval()
         for split in ["train", "val"]:
@@ -86,10 +83,15 @@ class Trainer:
 
     def train(self):
         print(f"\n--- Starting Training | Run: {self.run_dir} ---")
+        print(
+            f"Dataset: {self.dataset_name} | Tokenizer: {self.config.tokenizer_class}"
+        )
 
-        # Save config and dictionary
+        # Save configuration for reproducibility
         with open(os.path.join(self.run_dir, "config.json"), "w") as f:
             json.dump(self.config.to_dict(), f, indent=4)
+
+        # Save tokenizer metadata
         with open(os.path.join(self.run_dir, "dictionary.json"), "w") as f:
             json.dump(self.dataset.tokenizer.to_dict(), f, indent=4)
 
@@ -101,7 +103,7 @@ class Trainer:
         pbar = tqdm(range(self.config.max_iters), desc="Training Progress")
 
         for iter in pbar:
-            # Evaluation
+            # Periodic Evaluation
             if (
                 iter % self.config.eval_interval == 0
                 or iter == self.config.max_iters - 1
@@ -120,16 +122,18 @@ class Trainer:
 
                 pbar.set_description(f"Step {iter} | Val Loss: {losses['val']:.4f}")
 
+                # Save Checkpoint if it's the best model seen so far
                 if losses["val"] < best_val_loss:
                     best_val_loss = losses["val"]
                     torch.save(
-                        self.model.state_dict(),
-                        os.path.join(self.run_dir, "best_model.pth"),  # nosec B614
+                        self.model.state_dict(),  # nosec B614
+                        os.path.join(self.run_dir, "best_model.pth"),
                     )
 
-            # Training step
+            # Standard Training Step
             xb, yb = self.dataset.get_batch("train", self.config.batch_size)
             _, loss = self.model(xb, yb)
+
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             self.optimizer.step()
@@ -139,7 +143,7 @@ class Trainer:
 
         total_duration = time.time() - start_time
 
-        # Final logging
+        # Final TensorBoard HParams logging
         self.writer.add_hparams(
             asdict(self.config),
             {
@@ -148,9 +152,11 @@ class Trainer:
             },
         )
 
+        # Save Final Metrics
         metrics = {
             "model_name": self.model_name,
             "dataset": self.dataset_name,
+            "tokenizer": self.config.tokenizer_class,
             "total_training_time_seconds": round(total_duration, 2),
             "best_val_loss": round(best_val_loss, 4),
             "history": history,
@@ -158,6 +164,7 @@ class Trainer:
         with open(os.path.join(self.run_dir, "metrics.json"), "w") as f:
             json.dump(metrics, f, indent=4)
 
+        # Save the final state of the model
         torch.save(
             self.model.state_dict(),
             os.path.join(self.run_dir, "final_model.pth"),  # nosec B614

@@ -9,13 +9,11 @@ class Generator:
         self.config = config
         self.run_dir = run_dir
 
-        # Load Dataset and Tokenizer from run artifacts
+        # Load Dataset
         self.dataset = InputDataset(
-            os.path.join("data", dataset_name),
-            config.block_size,
-            config.device,
-            os.path.join(run_dir, "dictionary.json"),
-            config.tokenizer_class,
+            config,
+            dataset_name,
+            dictionary_path=os.path.join(run_dir, "dictionary.json"),
         )
 
         # Model Loading
@@ -43,6 +41,7 @@ class Generator:
         if not hint:
             hint = "\n"
 
+        # Encode hint using the reloaded tokenizer
         context = torch.tensor(
             [self.dataset.tokenizer.encode(hint)],
             dtype=torch.long,

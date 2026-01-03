@@ -1,190 +1,103 @@
+import os
 import torch
-import json
-from functools import cached_property
-
-
-# Simple integer tokenizer. By overloading the __init__() mehtod you can
-# set the self.keys property to whatever length of characters or whatever
-# list of (non repeating) words you prefer
-class BaseTokenizer:
-    def __init__(self):
-        if hasattr(self, "keys"):
-            self.enc = self.encoder()
-            self.dec = self.decoder()
-
-    def to_dict(self):
-        return self.__dict__
-
-    def from_dict(self, data):
-        data["dec"] = {int(k): v for k, v in data["dec"].items()}
-        data["enc"] = {k: int(v) for k, v in data["enc"].items()}
-        self.__dict__.update(data)
-
-    def encode(self, strings):
-        raise NotImplementedError("Must overload in Derived class")
-        """Converts a string into a list of integers."""
-        return [self.enc[c] for c in strings]
-
-    def decode(self, integers):
-        raise NotImplementedError("Must overload in Derived class")
-        """Converts a list of integers back into a string."""
-        return "".join([self.dec[i] for i in integers])
-
-    def decoder(self):
-        return {i: ch for i, ch in enumerate(self.keys)}
-
-    def encoder(self):
-        return {ch: i for i, ch in enumerate(self.keys)}
-
-    @cached_property
-    def vocab_size(self):
-        return max(len(self.dec), len(self.enc))
-
-
-class CharTokenizer(BaseTokenizer):
-    """
-    A simple character-level tokenizer.
-    It builds a vocabulary from the input text and handles
-    string-to-integer (encode) and integer-to-string (decode) conversions.
-    """
-
-    def __init__(self, data=""):
-        if data:
-            self.keys = sorted(list(set(data)))
-            super().__init__()
-
-    def encode(self, strings):
-        """Converts a string into a list of integers."""
-        return [self.enc[c] for c in strings]
-
-    def decode(self, integers):
-        """Converts a list of integers back into a string."""
-        return "".join([self.dec[i] for i in integers])
-
-
-class BiCharTokenizer(BaseTokenizer):
-    def __init__(self, data=""):
-        if data:
-            char2 = set(
-                [data[i : i + 2] for i in range(0, len(data), 2)]
-            )  # two character keys
-            self.keys = list(char2 | set(data))
-            self.keys.sort()
-            super().__init__()
-
-    def encode(self, strings):
-        """Converts a string into a list of integers."""
-        return [self.enc[strings[i : i + 2]] for i in range(0, len(strings), 2)]
-
-    def decode(self, integers):
-        """Converts a list of integers back into a string."""
-        return "".join([self.dec[i] for i in integers])
-
-
-class TriCharTokenizer(BaseTokenizer):
-    def __init__(self, data=""):
-        if data:
-            char2 = set(
-                [data[i : i + 2] for i in range(0, len(data), 2)]
-            )  # two character keys
-            char3 = set(
-                [data[i : i + 3] for i in range(0, len(data), 3)]
-            )  # three character keys
-            self.keys = list(char2 | char3 | set(data))
-            self.keys.sort()
-            super().__init__()
-
-    def encode(self, strings):
-        """Converts a string into a list of integers."""
-        return [self.enc[strings[i : i + 3]] for i in range(0, len(strings), 3)]
-
-    def decode(self, integers):
-        """Converts a list of integers back into a string."""
-        return "".join([self.dec[i] for i in integers])
-
-
-# NO à, è, é, ì, ò, ù :(
-class ASCIITokenizer(BaseTokenizer):
-    def __init__(self, data=""):
-        if data:
-            self.keys = [chr(i) for i in range(123)]
-            super().__init__()
-
-
-# class BiASCIITokenizer(BaseTokenizer):
-#     def __init__(self, data=''):
-#         from itertools import product
-#         if data:
-#             chars = [chr(i) for i in range(123)]
-#             self.keys = chars + list(product(chars, repeat=2))
-#             super().__init__()
-
-# class TriASCIITokenizer(BaseTokenizer):
-#     def __init__(self, data=''):
-#         from itertools import product
-#         if data:
-#             chars = [chr(i) for i in range(123)]
-#             self.keys = chars + list(product(chars, repeat=2)) + list(product(chars, repeat=3))
-#             self.keys.sort()
-#             super().__init__()
+from datasets import load_dataset as load_hf_dataset
+from src.tokenizer import CharTokenizer, BiCharTokenizer, HFTokenizerWrapper
 
 
 class InputDataset:
-    """
-    Handles loading the text file, tokenizing the data,
-    and generating batches for training/validation.
-    """
+    def __init__(self, config, file_path_or_repo, dictionary_path=None):
+        self.config = config
+        self.device = config.device
+        self.block_size = config.block_size
 
-    def __init__(
-        self,
-        file_path,
-        block_size,
-        device,
-        dictionary_path="",
-        tokenizer: str = "CharTokenizer",
-    ):
-        tokenizer_cls = globals().get(tokenizer)
-        if tokenizer_cls is None or not callable(tokenizer_cls):
-            raise ValueError(
-                f"Tokenizer class '{tokenizer}' not found or not callable."
-            )
+        # 1. Setup Tokenizer
+        self.tokenizer = self._setup_tokenizer(
+            config, dictionary_path, file_path_or_repo
+        )
 
-        if dictionary_path:  # generate
-            # Initialize the tokenizer and convert the whole text to a tensor
-            self.tokenizer = tokenizer_cls()
+        # 2. Load Data (Local or HF)
+        raw_text = self._load_raw_data(file_path_or_repo)
 
-            with open(dictionary_path, "r", encoding="utf-8") as f:
-                self.tokenizer.from_dict(json.load(f))
-        else:  # train
-            # Read the entire text file
-            with open(file_path, "r", encoding="utf-8") as f:
-                self.text = f.read()
-            # Initialize the tokenizer and convert the whole text to a tensor
-            self.tokenizer = tokenizer_cls(self.text)
-            print(self.tokenizer.enc)
-            self.data = torch.tensor(self.tokenizer.encode(self.text), dtype=torch.long)
-            # Create a Train/Validation split (90% training, 10% validation)
-            n = int(0.9 * len(self.data))
-            self.train_data = self.data[:n]
-            self.val_data = self.data[n:]
+        # 3. Tokenize and Prepare Tensors
+        print(f"Tokenizing dataset (Vocab size: {self.tokenizer.vocab_size})...")
+        full_data = torch.tensor(self.tokenizer.encode(raw_text), dtype=torch.long)
 
-            self.block_size = block_size
-            self.device = device
+        # Split 90/10
+        n = int(0.9 * len(full_data))
+        self.train_data = full_data[:n]
+        self.val_data = full_data[n:]
+
+    def _setup_tokenizer(self, config, dict_path, data_sample):
+        t_type = config.tokenizer_class
+
+        # Case A: Hugging Face Tokenizer
+        if t_type.startswith("hf-") or t_type in ["gpt2", "roberta-base"]:
+            model_name = t_type.replace("hf-", "")
+            return HFTokenizerWrapper(model_name)
+
+        # Case B: Legacy Tokenizers
+        tokenizers_map = {
+            "CharTokenizer": CharTokenizer,
+            "BiCharTokenizer": BiCharTokenizer,
+        }
+        cls = tokenizers_map.get(t_type, CharTokenizer)
+
+        tokenizer = cls()
+        if dict_path and os.path.exists(dict_path):
+            import json
+
+            with open(dict_path, "r") as f:
+                tokenizer.from_dict(json.load(f))
+        else:
+            # We need to build the vocab from text
+            text_sample = self._load_raw_data(data_sample)
+            tokenizer = cls(text_sample)
+        return tokenizer
+
+    def _load_raw_data(self, path):
+        """Loads text from local file or HF Hub with robust column detection."""
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        elif os.path.exists(f"data/{path}"):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        else:
+            print(f"File '{path}' not found. Attempting to load from HF Hub...")
+            # We use 'train' split by default
+            ds = load_hf_dataset(path, split="train")
+
+            # 1. Look for common text column names
+            column_names = ds.column_names
+            target_column = None
+            candidates = ["text", "Text", "content", "body", "document"]
+
+            for candidate in candidates:
+                if candidate in column_names:
+                    target_column = candidate
+                    break
+
+            # 2. Fallback: if no common name is found, pick the first column that contains strings
+            if not target_column:
+                for col in column_names:
+                    # Check the first row to see if it's a string
+                    if isinstance(ds[0][col], str):
+                        target_column = col
+                        break
+
+            if not target_column:
+                raise ValueError(
+                    f"Could not find a text column in dataset '{path}'. Available columns: {column_names}"
+                )
+
+            print(f"Found text in column: '{target_column}'")
+
+            # Join all rows into one large string
+            return "\n".join(ds[target_column])
 
     def get_batch(self, split, batch_size):
-        """
-        Generates a small batch of inputs x and targets y.
-        """
         data = self.train_data if split == "train" else self.val_data
-
-        # Select random starting indices for the batch
-        # We subtract block_size to ensure we don't go out of bounds
         ix = torch.randint(len(data) - self.block_size, (batch_size,))
-
-        # Stack the rows to create the batch tensors
-        # x: the context (0 to block_size)
-        # y: the targets (1 to block_size + 1), shifted by one for next-token prediction
         x = torch.stack([data[i : i + self.block_size] for i in ix])
         y = torch.stack([data[i + 1 : i + self.block_size + 1] for i in ix])
-
         return x.to(self.device), y.to(self.device)
