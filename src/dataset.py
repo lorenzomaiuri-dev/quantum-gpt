@@ -20,10 +20,12 @@ class BaseTokenizer:
         self.__dict__.update(data)
 
     def encode(self, strings):
+        raise NotImplementedError("Must overload in Derived class")
         """Converts a string into a list of integers."""
         return [self.enc[c] for c in strings]
 
     def decode(self, integers):
+        raise NotImplementedError("Must overload in Derived class")
         """Converts a list of integers back into a string."""
         return "".join([self.dec[i] for i in integers])
 
@@ -48,23 +50,47 @@ class CharTokenizer(BaseTokenizer):
             self.keys = sorted(list(set(data)))
             super().__init__()
 
+    def encode(self, strings):
+        """Converts a string into a list of integers."""
+        return [self.enc[c] for c in strings]
+
+    def decode(self, integers):
+        """Converts a list of integers back into a string."""
+        return "".join([self.dec[i] for i in integers])
+
 
 class BiCharTokenizer(BaseTokenizer):
     def __init__(self, data=''):
         if data:
-            char2 = list(set([data[i:i+2] for i in range(0, len(data), 2)]))    # two character keys
-            self.keys = char2 + list(set(data))
+            char2 = set([data[i:i+2] for i in range(0, len(data), 2)])    # two character keys
+            self.keys = list(char2 | set(data))
             self.keys.sort()
             super().__init__()
+
+    def encode(self, strings):
+        """Converts a string into a list of integers."""
+        return [self.enc[strings[i:i+2]] for i in range(0, len(strings), 2)]
+
+    def decode(self, integers):
+        """Converts a list of integers back into a string."""
+        return "".join([self.dec[i] for i in integers])
 
 class TriCharTokenizer(BaseTokenizer):
     def __init__(self, data=''):
         if data:
-            char2 = list(set([data[i:i+2] for i in range(0, len(data), 2)]))    # two character keys
-            char3 = list(set([data[i:i+3] for i in range(0, len(data), 3)]))    # two character keys
-            self.keys = char2 + char3 + list(set(data))
+            char2 = set([data[i:i+2] for i in range(0, len(data), 2)])    # two character keys
+            char3 = set([data[i:i+3] for i in range(0, len(data), 3)])    # three character keys
+            self.keys = list(char2 | char3 | set(data))
             self.keys.sort()
             super().__init__()
+
+    def encode(self, strings):
+        """Converts a string into a list of integers."""
+        return [self.enc[strings[i:i+3]] for i in range(0, len(strings), 3)]
+
+    def decode(self, integers):
+        """Converts a list of integers back into a string."""
+        return "".join([self.dec[i] for i in integers])
 
 # NO à, è, é, ì, ò, ù :(
 class ASCIITokenizer(BaseTokenizer):
@@ -100,7 +126,7 @@ class InputDataset:
     def __init__(self, file_path, block_size, device, dictionary_path='', tokenizer : str = "CharTokenizer"):
         if dictionary_path:  # generate
             # Initialize the tokenizer and convert the whole text to a tensor
-            self.tokenizer = BaseTokenizer()    # uses BaseTokenizer because data is loaded and not computed
+            self.tokenizer = globals().get(tokenizer)()
             with open(dictionary_path, "r", encoding="utf-8") as f:
                 self.tokenizer.from_dict(json.load(f))
         else:           # train

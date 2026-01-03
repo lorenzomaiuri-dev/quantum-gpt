@@ -12,8 +12,6 @@ from torch.utils.tensorboard import SummaryWriter
 from src.dataset import InputDataset
 from src.model import QuantumGPT
 
-class ForceCpu: FORCE_CPU = False
-
 # Set seed for reproducibility
 torch.manual_seed(1337)
 if torch.cuda.is_available():
@@ -28,9 +26,7 @@ def setup_run_dir(model_name):
     return run_dir
 
 
-def train(config, model_name, dataset_name):
-    run_dir = setup_run_dir(model_name)
-
+def train(config, model_name, run_dir, dataset_name):
     # Initialize TensorBoard Writer
     writer = SummaryWriter(log_dir=run_dir)
 
@@ -239,20 +235,28 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.force_cpu:
-        ForceCpu.FORCE_CPU = True
-
     # loads config
     try:
         config_module = importlib.import_module(f"src.config.{args.config}")
         GPTConfig = getattr(config_module, "GPTConfig")
         cfg = GPTConfig()
+        if args.force_cpu:
+            cfg.device = "cpu"
     except Exception as e:
         print(f"Error loading config: {e}")
         exit(1)
         
     if args.mode == "train" or args.mode == 'full':
-        args.run_dir = train(cfg, args.name, args.dataset)
+        run_dir = setup_run_dir(args.name)
+        try:
+            args.run_dir = train(cfg, args.name, run_dir, args.dataset)
+        except BaseException as e:
+            from shutil import move, copytree
+            source = run_dir
+            dest = os.path.join('experiments_failed', os.path.basename(run_dir))
+            print(f"moving {source} to {dest}")
+            move(source, dest, copy_function=copytree)
+            raise e
 
 
     if args.mode == "generate" or args.mode == 'full':
