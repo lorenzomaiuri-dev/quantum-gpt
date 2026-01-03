@@ -1,9 +1,9 @@
 import torch
 from dataclasses import dataclass, asdict
 
+
 @dataclass
 class GPTConfig:
-    from main import ForceCpu
     batch_size: int = (
         64  # Number of independent sequences processed in parallel per training step
     )
@@ -16,7 +16,7 @@ class GPTConfig:
         3e-4  # The step size used by the optimizer for weight updates
     )
     device: str = (
-        "cuda" if torch.cuda.is_available() and not ForceCpu else "cpu"
+        "cuda" if torch.cuda.is_available() else "cpu"
     )  # Hardware used for computation (GPU or CPU)
     eval_iters: int = 200  # Number of batches to average over when estimating the loss during evaluation
     n_embd: int = 384  # Total dimension of the token embeddings (hidden size)
