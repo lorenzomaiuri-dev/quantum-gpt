@@ -26,9 +26,7 @@ def setup_run_dir(model_name):
     return run_dir
 
 
-def train(config, model_name, dataset_name):
-    run_dir = setup_run_dir(model_name)
-
+def train(config, model_name, run_dir, dataset_name):
     # Initialize TensorBoard Writer
     writer = SummaryWriter(log_dir=run_dir)
 
@@ -45,7 +43,7 @@ def train(config, model_name, dataset_name):
     if not os.path.exists(dataset_path):
         raise FileNotFoundError(f"Dataset file not found at {dataset_path}")
 
-    dataset = InputDataset(dataset_path, config.block_size, config.device)
+    dataset = InputDataset(dataset_path, config.block_size, config.device, tokenizer=config.tokenizer_class)
 
     with open(os.path.join(run_dir, "dictionary.json"), "w") as f:
         json.dump(dataset.tokenizer.to_dict(), f, indent=4)
@@ -162,9 +160,7 @@ def train(config, model_name, dataset_name):
 def generate(config, run_dir, dataset_name, max_new_tokens=500, print_in_place=False, hint='', seeds=''):
     print("\n--- Starting Generation ---")
     dataset_path = os.path.join("data", f"{dataset_name}")
-    dataset = InputDataset(dataset_path, config.block_size, config.device, os.path.join(run_dir, "dictionary.json"))
-    
-    print(dataset.tokenizer.itos)
+    dataset = InputDataset(dataset_path, config.block_size, config.device, os.path.join(run_dir, "dictionary.json"), config.tokenizer_class)
 
     model = QuantumGPT(config, dataset.tokenizer.vocab_size)
     load_path = os.path.join(run_dir, "best_model.pth")
@@ -181,8 +177,10 @@ def generate(config, run_dir, dataset_name, max_new_tokens=500, print_in_place=F
     m = model.to(config.device)
     m.eval()
 
+    if not hint:
+        hint = "\n"
     context = torch.tensor(
-        [dataset.tokenizer.encode("\n")], dtype=torch.long, device=config.device
+        [dataset.tokenizer.encode(hint)], dtype=torch.long, device=config.device
     )
 
     def do_generate(seed):
@@ -232,22 +230,36 @@ if __name__ == "__main__":
     parser.add_argument("--seeds", type=str, default=None)
     parser.add_argument("--generations", type=int, default=-1)
     parser.add_argument("--print_in_place", action='store_true')		# just funy
+    parser.add_argument("--force_cpu", action='store_true')
     parser.add_argument("--hint", type=str, default="", nargs='+')
 
     args = parser.parse_args()
-            
 
-    if args.mode == "train":
+    # loads config
+    try:
+        config_module = importlib.import_module(f"src.config.{args.config}")
+        GPTConfig = getattr(config_module, "GPTConfig")
+        cfg = GPTConfig()
+        if args.force_cpu:
+            cfg.device = "cpu"
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        exit(1)
+        
+    if args.mode == "train" or args.mode == 'full':
+        run_dir = setup_run_dir(args.name)
         try:
-            config_module = importlib.import_module(f"src.config.{args.config}")
-            GPTConfig = getattr(config_module, "GPTConfig")
-            cfg = GPTConfig()
-        except Exception as e:
-            print(f"Error loading config: {e}")
-            exit(1)
-        train(cfg, args.name, args.dataset)
+            args.run_dir = train(cfg, args.name, run_dir, args.dataset)
+        except BaseException as e:
+            from shutil import move, copytree
+            source = run_dir
+            dest = os.path.join('experiments_failed', os.path.basename(run_dir))
+            print(f"moving {source} to {dest}")
+            move(source, dest, copy_function=copytree)
+            raise e
 
-    elif args.mode == "generate":
+
+    if args.mode == "generate" or args.mode == 'full':
         args.hint = ' '.join(args.hint)
 
         if args.hint:
@@ -269,12 +281,8 @@ if __name__ == "__main__":
             # 	print("WARNING: Cannot run and print in place concurrent generations")
             # 	args.print_in_place = False
         
-        args.run_dir = "experiments/" + args.run_dir
 
         try:
-            config_module = importlib.import_module(f"src.config.{args.config}")
-            GPTConfig = getattr(config_module, "GPTConfig")
-            cfg = GPTConfig()
             # Loads the config from the run trace
             with open(f'{args.run_dir}/config.json', 'r') as f:
                 for key, prop in json.load(f).items():

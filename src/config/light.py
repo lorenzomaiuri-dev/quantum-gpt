@@ -1,11 +1,12 @@
 import torch
 from dataclasses import dataclass, asdict
 
-
 @dataclass
 class GPTConfig:
+    tokenizer_class: str = "BiCharTokenizer"
+    
     batch_size: int = (
-        4  # Number of independent sequences processed in parallel per training step
+        8  # Number of independent sequences processed in parallel per training step
     )
     block_size: int = (
         16  # Maximum context length: the number of tokens the model can look back at

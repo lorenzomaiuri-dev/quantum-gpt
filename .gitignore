@@ -216,3 +216,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 experiments
+experiments_old
+experiments_success
+experiments_failed
