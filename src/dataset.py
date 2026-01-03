@@ -2,6 +2,7 @@ import torch
 import json
 from functools import cached_property
 
+
 # Simple integer tokenizer. By overloading the __init__() mehtod you can
 # set the self.keys property to whatever length of characters or whatever
 # list of (non repeating) words you prefer
@@ -10,13 +11,13 @@ class BaseTokenizer:
         if hasattr(self, "keys"):
             self.enc = self.encoder()
             self.dec = self.decoder()
-    
+
     def to_dict(self):
         return self.__dict__
-    
+
     def from_dict(self, data):
-        data['dec'] = {int(k) : v for k,v in data['dec'].items()}
-        data['enc'] = {k : int(v) for k,v in data['enc'].items()}
+        data["dec"] = {int(k): v for k, v in data["dec"].items()}
+        data["enc"] = {k: int(v) for k, v in data["enc"].items()}
         self.__dict__.update(data)
 
     def encode(self, strings):
@@ -34,10 +35,11 @@ class BaseTokenizer:
 
     def encoder(self):
         return {ch: i for i, ch in enumerate(self.keys)}
-    
+
     @cached_property
     def vocab_size(self):
         return max(len(self.dec), len(self.enc))
+
 
 class CharTokenizer(BaseTokenizer):
     """
@@ -45,7 +47,8 @@ class CharTokenizer(BaseTokenizer):
     It builds a vocabulary from the input text and handles
     string-to-integer (encode) and integer-to-string (decode) conversions.
     """
-    def __init__(self, data=''):
+
+    def __init__(self, data=""):
         if data:
             self.keys = sorted(list(set(data)))
             super().__init__()
@@ -60,41 +63,49 @@ class CharTokenizer(BaseTokenizer):
 
 
 class BiCharTokenizer(BaseTokenizer):
-    def __init__(self, data=''):
+    def __init__(self, data=""):
         if data:
-            char2 = set([data[i:i+2] for i in range(0, len(data), 2)])    # two character keys
+            char2 = set(
+                [data[i : i + 2] for i in range(0, len(data), 2)]
+            )  # two character keys
             self.keys = list(char2 | set(data))
             self.keys.sort()
             super().__init__()
 
     def encode(self, strings):
         """Converts a string into a list of integers."""
-        return [self.enc[strings[i:i+2]] for i in range(0, len(strings), 2)]
+        return [self.enc[strings[i : i + 2]] for i in range(0, len(strings), 2)]
 
     def decode(self, integers):
         """Converts a list of integers back into a string."""
         return "".join([self.dec[i] for i in integers])
 
+
 class TriCharTokenizer(BaseTokenizer):
-    def __init__(self, data=''):
+    def __init__(self, data=""):
         if data:
-            char2 = set([data[i:i+2] for i in range(0, len(data), 2)])    # two character keys
-            char3 = set([data[i:i+3] for i in range(0, len(data), 3)])    # three character keys
+            char2 = set(
+                [data[i : i + 2] for i in range(0, len(data), 2)]
+            )  # two character keys
+            char3 = set(
+                [data[i : i + 3] for i in range(0, len(data), 3)]
+            )  # three character keys
             self.keys = list(char2 | char3 | set(data))
             self.keys.sort()
             super().__init__()
 
     def encode(self, strings):
         """Converts a string into a list of integers."""
-        return [self.enc[strings[i:i+3]] for i in range(0, len(strings), 3)]
+        return [self.enc[strings[i : i + 3]] for i in range(0, len(strings), 3)]
 
     def decode(self, integers):
         """Converts a list of integers back into a string."""
         return "".join([self.dec[i] for i in integers])
 
+
 # NO à, è, é, ì, ò, ù :(
 class ASCIITokenizer(BaseTokenizer):
-    def __init__(self, data=''):
+    def __init__(self, data=""):
         if data:
             self.keys = [chr(i) for i in range(123)]
             super().__init__()
@@ -117,31 +128,46 @@ class ASCIITokenizer(BaseTokenizer):
 #             self.keys.sort()
 #             super().__init__()
 
+
 class InputDataset:
     """
     Handles loading the text file, tokenizing the data,
     and generating batches for training/validation.
     """
 
-    def __init__(self, file_path, block_size, device, dictionary_path='', tokenizer : str = "CharTokenizer"):
+    def __init__(
+        self,
+        file_path,
+        block_size,
+        device,
+        dictionary_path="",
+        tokenizer: str = "CharTokenizer",
+    ):
+        tokenizer_cls = globals().get(tokenizer)
+        if tokenizer_cls is None or not callable(tokenizer_cls):
+            raise ValueError(
+                f"Tokenizer class '{tokenizer}' not found or not callable."
+            )
+
         if dictionary_path:  # generate
             # Initialize the tokenizer and convert the whole text to a tensor
-            self.tokenizer = globals().get(tokenizer)()
+            self.tokenizer = tokenizer_cls()
+
             with open(dictionary_path, "r", encoding="utf-8") as f:
                 self.tokenizer.from_dict(json.load(f))
-        else:           # train
+        else:  # train
             # Read the entire text file
             with open(file_path, "r", encoding="utf-8") as f:
                 self.text = f.read()
             # Initialize the tokenizer and convert the whole text to a tensor
-            self.tokenizer = globals().get(tokenizer)(self.text)
+            self.tokenizer = tokenizer_cls(self.text)
             print(self.tokenizer.enc)
             self.data = torch.tensor(self.tokenizer.encode(self.text), dtype=torch.long)
             # Create a Train/Validation split (90% training, 10% validation)
             n = int(0.9 * len(self.data))
             self.train_data = self.data[:n]
             self.val_data = self.data[n:]
-            
+
             self.block_size = block_size
             self.device = device
 

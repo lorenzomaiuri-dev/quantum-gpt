@@ -7,7 +7,10 @@ import time
 from datetime import datetime
 from dataclasses import asdict
 from tqdm import tqdm
+import secrets
 from torch.utils.tensorboard import SummaryWriter
+from torchinfo import summary
+from torchviz import make_dot
 
 from src.dataset import InputDataset
 from src.model import QuantumGPT
@@ -43,7 +46,9 @@ def train(config, model_name, run_dir, dataset_name):
     if not os.path.exists(dataset_path):
         raise FileNotFoundError(f"Dataset file not found at {dataset_path}")
 
-    dataset = InputDataset(dataset_path, config.block_size, config.device, tokenizer=config.tokenizer_class)
+    dataset = InputDataset(
+        dataset_path, config.block_size, config.device, tokenizer=config.tokenizer_class
+    )
 
     with open(os.path.join(run_dir, "dictionary.json"), "w") as f:
         json.dump(dataset.tokenizer.to_dict(), f, indent=4)
@@ -61,12 +66,22 @@ def train(config, model_name, run_dir, dataset_name):
     except Exception as e:
         print(f"Could not log model graph: {e}")
 
+    print("Generating graph...")
+    dummy_input = torch.zeros((1, config.block_size), dtype=torch.long).to(
+        config.device
+    )
+    logits, _ = m(dummy_input)
+    dot = make_dot(logits, params=dict(m.named_parameters()))
+    dot.format = "png"
+    output_path = os.path.join(run_dir, "model_architecture_graph")
+    dot.render(output_path)
+
     # Save detailed model architecture to a text file
-    with open(os.path.join(run_dir, "model_structure.txt"), "w") as f:
-        f.write(str(m))
-        total_params = sum(p.numel() for p in m.parameters())
-        f.write(f"\n\nTotal Parameters: {total_params:,}\n")
-        f.write(f"Quantum Enabled: {config.use_quantum}\n")
+    with open(os.path.join(run_dir, "model_summary_table.txt"), "w") as f:
+        model_stats = summary(m, input_data=dummy_input, verbose=0)
+        f.write(str(model_stats))
+
+    total_params = sum(p.numel() for p in m.parameters())
 
     print(f"Model Parameters: {total_params / 1e3:.2f}K")
 
@@ -157,20 +172,34 @@ def train(config, model_name, run_dir, dataset_name):
     return run_dir
 
 
-def generate(config, run_dir, dataset_name, max_new_tokens=500, print_in_place=False, hint='', seeds=''):
+def generate(
+    config,
+    run_dir,
+    dataset_name,
+    max_new_tokens=500,
+    print_in_place=False,
+    hint="",
+    seeds="",
+):
     print("\n--- Starting Generation ---")
     dataset_path = os.path.join("data", f"{dataset_name}")
-    dataset = InputDataset(dataset_path, config.block_size, config.device, os.path.join(run_dir, "dictionary.json"), config.tokenizer_class)
+    dataset = InputDataset(
+        dataset_path,
+        config.block_size,
+        config.device,
+        os.path.join(run_dir, "dictionary.json"),
+        config.tokenizer_class,
+    )
 
     model = QuantumGPT(config, dataset.tokenizer.vocab_size)
     load_path = os.path.join(run_dir, "best_model.pth")
 
     if not os.path.exists(load_path):
         load_path = os.path.join(run_dir, "final_model.pth")
-        print('## using final_model')
+        print("## using final_model")
     else:
-        print('## using best_model')
-        
+        print("## using best_model")
+
     model.load_state_dict(
         torch.load(load_path, map_location=config.device, weights_only=True)  # nosec B614
     )
@@ -185,35 +214,38 @@ def generate(config, run_dir, dataset_name, max_new_tokens=500, print_in_place=F
 
     def do_generate(seed):
         if print_in_place:
-            print(hint, end='')
+            print(hint, end="")
         torch.manual_seed(int(seed))
         if torch.cuda.is_available():
             torch.cuda.manual_seed(int(seed))
-        out_tokens = m.generate(context, max_new_tokens=max_new_tokens, print_in_place=print_in_place, decode_function=dataset.tokenizer.decode)[0].tolist()
+        out_tokens = m.generate(
+            context,
+            max_new_tokens=max_new_tokens,
+            print_in_place=print_in_place,
+            decode_function=dataset.tokenizer.decode,
+        )[0].tolist()
         decoded_text = dataset.tokenizer.decode(out_tokens)
         return decoded_text
-    
+
     res = []
     # with ProcessPoolExecutor() as executor:
     for i in range(len(seeds)):
         # res = list(executor.map(do_generate, seeds))
         res.append(do_generate(seeds[i]))
         if print_in_place:
-            print('\n----------------------------------------------\n')
+            print("\n----------------------------------------------\n")
 
     if not print_in_place:
-        print(f"\n--- GENERATED TEXT{"S" if len(seeds) > 1 else ""} ---")
+        print(f"\n--- GENERATED TEXT{'S' if len(seeds) > 1 else ''} ---")
     for i in range(len(res)):
         if not print_in_place:
-            print('-- ', seeds[i], ' --\n', res[i])
-        os.makedirs(os.path.join(run_dir, 'generated_samples'), exist_ok=True)
-        dir = os.path.join(run_dir, "generated_samples", hint+str(seeds[i])+'.txt')
-        with open(
-            dir , "w", encoding="utf-8"
-        ) as f:
+            print("-- ", seeds[i], " --\n", res[i])
+        os.makedirs(os.path.join(run_dir, "generated_samples"), exist_ok=True)
+        dir = os.path.join(run_dir, "generated_samples", hint + str(seeds[i]) + ".txt")
+        with open(dir, "w", encoding="utf-8") as f:
             f.write(res[i])
         if not print_in_place:
-            print('\n')
+            print("\n")
 
 
 if __name__ == "__main__":
@@ -229,9 +261,9 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--seeds", type=str, default=None)
     parser.add_argument("--generations", type=int, default=-1)
-    parser.add_argument("--print_in_place", action='store_true')		# just funy
-    parser.add_argument("--force_cpu", action='store_true')
-    parser.add_argument("--hint", type=str, default="", nargs='+')
+    parser.add_argument("--print_in_place", action="store_true")  # just funy
+    parser.add_argument("--force_cpu", action="store_true")
+    parser.add_argument("--hint", type=str, default="", nargs="+")
 
     args = parser.parse_args()
 
@@ -245,22 +277,22 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error loading config: {e}")
         exit(1)
-        
-    if args.mode == "train" or args.mode == 'full':
+
+    if args.mode == "train" or args.mode == "full":
         run_dir = setup_run_dir(args.name)
         try:
             args.run_dir = train(cfg, args.name, run_dir, args.dataset)
         except BaseException as e:
             from shutil import move, copytree
+
             source = run_dir
-            dest = os.path.join('experiments_failed', os.path.basename(run_dir))
+            dest = os.path.join("experiments_failed", os.path.basename(run_dir))
             print(f"moving {source} to {dest}")
             move(source, dest, copy_function=copytree)
             raise e
 
-
-    if args.mode == "generate" or args.mode == 'full':
-        args.hint = ' '.join(args.hint)
+    if args.mode == "generate" or args.mode == "full":
+        args.hint = " ".join(args.hint)
 
         if args.hint:
             print(f"## hint: {args.hint}")
@@ -272,19 +304,17 @@ if __name__ == "__main__":
         if args.generations < 0:
             args.generations *= -1
         if len(seeds) < args.generations:
-            from random import randint
             for _ in range(args.generations - len(seeds)):
-                seeds.append(str(randint(0, 0x7FFFFFFF)))
+                seeds.append(str(secrets.randbelow(0x7FFFFFFF)))
         if len(seeds) != 1:
             print("seeds:", seeds)
             # if args.print_in_place:
             # 	print("WARNING: Cannot run and print in place concurrent generations")
             # 	args.print_in_place = False
-        
 
         try:
             # Loads the config from the run trace
-            with open(f'{args.run_dir}/config.json', 'r') as f:
+            with open(f"{args.run_dir}/config.json", "r") as f:
                 for key, prop in json.load(f).items():
                     setattr(cfg, key, prop)
         except Exception as e:
@@ -292,6 +322,14 @@ if __name__ == "__main__":
             exit(1)
         if not args.run_dir:
             print("Provide --run_dir")
-            
+
         else:
-            generate(cfg, args.run_dir, args.dataset, int(args.tokens), print_in_place=args.print_in_place, hint=args.hint, seeds=seeds)
+            generate(
+                cfg,
+                args.run_dir,
+                args.dataset,
+                int(args.tokens),
+                print_in_place=args.print_in_place,
+                hint=args.hint,
+                seeds=seeds,
+            )

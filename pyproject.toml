@@ -10,5 +10,7 @@ dependencies = [
     "pre-commit>=4.5.1",
     "tensorboard>=2.20.0",
     "torch>=2.9.1",
+    "torchinfo>=1.8.0",
+    "torchviz>=0.0.3",
     "tqdm>=4.67.1",
 ]
