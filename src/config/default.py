@@ -3,13 +3,13 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class GPTConfig:
-    tokenizer_class: str = "BiCharTokenizer"
+    tokenizer_class: str = "CharTokenizer"
 
     batch_size: int = (
         32  # Number of independent sequences processed in parallel per training step
     )
     block_size: int = (
-        64  # Maximum context length: the number of tokens the model can look back at
+        128  # Maximum context length: the number of tokens the model can look back at
     )
     max_iters: int = 5000  # Total number of training iterations (steps)
     eval_interval: int = 100  # How often (in iterations) to run the evaluation loop

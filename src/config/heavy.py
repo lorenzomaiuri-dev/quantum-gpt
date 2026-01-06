@@ -3,16 +3,16 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class GPTConfig:
-    tokenizer_class: str = "BiCharTokenizer"
+    tokenizer_class: str = "CharTokenizer"
 
     batch_size: int = (
         64  # Number of independent sequences processed in parallel per training step
     )
     block_size: int = (
-        128  # Maximum context length: the number of tokens the model can look back at
+        192  # Maximum context length: the number of tokens the model can look back at
     )
     max_iters: int = 20000  # Total number of training iterations (steps)
-    eval_interval: int = 150  # How often (in iterations) to run the evaluation loop
+    eval_interval: int = 200  # How often (in iterations) to run the evaluation loop
     learning_rate: float = (
         3e-4  # The step size used by the optimizer for weight updates
     )
@@ -22,9 +22,9 @@ class GPTConfig:
     eval_iters: int = 200  # Number of batches to average over when estimating the loss during evaluation
     n_embd: int = 128  # Total dimension of the token embeddings (hidden size)
     n_head: int = 32  # Number of attention heads in the Multi-Head Attention mechanism
-    n_layer: int = 9  # Number of Transformer blocks (layers) in the model
+    n_layer: int = 8  # Number of Transformer blocks (layers) in the model
     dropout: float = (
-        0.15  # Probability of dropping neurons during training to prevent overfitting
+        0.075  # Probability of dropping neurons during training to prevent overfitting
     )
 
     # Quantum config
@@ -43,3 +43,4 @@ class GPTConfig:
         out = asdict(self)
         out["n_qubits"] = self.n_qubits
         return out
+
