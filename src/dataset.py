@@ -15,17 +15,8 @@ class InputDataset:
             config, dictionary_path, file_path_or_repo
         )
 
-        # 2. Load Data (Local or HF)
-        raw_text = self._load_raw_data(file_path_or_repo)
+        # 2. Load Data (Local or HF) [Moved in _setup_tokenizer]
 
-        # 3. Tokenize and Prepare Tensors
-        print(f"Tokenizing dataset (Vocab size: {self.tokenizer.vocab_size})...")
-        full_data = torch.tensor(self.tokenizer.encode(raw_text), dtype=torch.long)
-
-        # Split 90/10
-        n = int(0.9 * len(full_data))
-        self.train_data = full_data[:n]
-        self.val_data = full_data[n:]
 
     def _setup_tokenizer(self, config, dict_path, data_sample):
         t_type = config.tokenizer_class
@@ -52,6 +43,15 @@ class InputDataset:
             # We need to build the vocab from text
             text_sample = self._load_raw_data(data_sample)
             tokenizer = cls(text_sample)
+
+            # Tokenize and Prepare Tensors
+            print(f"Tokenizing dataset (Vocab size: {tokenizer.vocab_size})...")
+            full_data = torch.tensor(tokenizer.encode(text_sample), dtype=torch.long)
+
+            # Split 90/10
+            n = int(0.9 * len(full_data))
+            self.train_data = full_data[:n]
+            self.val_data = full_data[n:]
         return tokenizer
 
     def _load_raw_data(self, path):
