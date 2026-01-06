@@ -1,6 +1,4 @@
 from functools import cached_property
-from transformers import AutoTokenizer
-
 
 class BaseTokenizer:
     """Interface for all tokenizers."""
@@ -70,14 +68,16 @@ class LegacyTokenizer(BaseTokenizer):
     def decode(self, ids):
         return "".join([self.dec[i] for i in ids])
 
-
+# Each symbol is a token. Simple, reliable
 class CharTokenizer(LegacyTokenizer):
     _step = 1
 
     def _build_keys(self, data):
         return sorted(list(set(data)))
 
-
+# Each symbol and pair of symbols is a token.
+#   Cons: Is more likely to generate garbage text, requires MUCH more trainig
+#   Pros: Is about twice as fast (generate mode), double text context length. Garbage workd 'sound like' the trained language
 class BiCharTokenizer(LegacyTokenizer):
     _step = 2
 
@@ -92,6 +92,7 @@ class HFTokenizerWrapper(BaseTokenizer):
     """Wrapper for Hugging Face tokenizers (e.g., 'gpt2', 'bert-base-uncased')."""
 
     def __init__(self, model_name="gpt2"):
+        from transformers import AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         # Ensure pad token exists
         if self.tokenizer.pad_token is None:

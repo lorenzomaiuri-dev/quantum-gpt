@@ -60,7 +60,7 @@ class InputDataset:
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
         elif os.path.exists(f"data/{path}"):
-            with open(path, "r", encoding="utf-8") as f:
+            with open(f"data/{path}", "r", encoding="utf-8") as f:
                 return f.read()
         else:
             print(f"File '{path}' not found. Attempting to load from HF Hub...")
