@@ -219,3 +219,6 @@ experiments
 experiments_old
 experiments_success
 experiments_failed
+
+data/ristoria.txt
+data/copypasta_archive.txt

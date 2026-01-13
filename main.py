@@ -3,11 +3,16 @@ import importlib
 import secrets
 import os
 import json
-import torch
 import shutil
-from src.training import Trainer
-from src.inference import Generator
+# Trainer and Generator are imported in the dedicated Mode section
 
+def save_experiment(name : str, succesful : bool):
+    # Handle failure: move partial logs to experiments_failed
+    move_dir = os.path.join(
+        "experiments_success" if succesful else "experiments_failed", os.path.basename(name)
+    )
+    print(f"Training {'succesful' if succesful else 'failed'}. Moving logs to {move_dir}")
+    shutil.move(name, move_dir)
 
 def main():
     parser = argparse.ArgumentParser(description="Quantum GPT Runner")
@@ -21,7 +26,7 @@ def main():
     parser.add_argument("--tokens", type=int, default=500)
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--seeds", type=str, default=None)
-    parser.add_argument("--generations", type=int, default=1)
+    parser.add_argument("--generations", type=int, default=-1)
     parser.add_argument("--print_in_place", action="store_true")
     parser.add_argument("--force_cpu", action="store_true")
     parser.add_argument("--hint", type=str, default="", nargs="+")
@@ -41,20 +46,17 @@ def main():
 
     # 2. Training Mode
     if args.mode in ["train", "full"]:
+        from src.training import Trainer
         trainer = Trainer(cfg, args.name, args.dataset)
         try:
             args.run_dir = trainer.train()
         except BaseException as e:
-            # Handle failure: move partial logs to experiments_failed
-            failed_dir = os.path.join(
-                "experiments_failed", os.path.basename(trainer.run_dir)
-            )
-            print(f"Training failed. Moving logs to {failed_dir}")
-            shutil.move(trainer.run_dir, failed_dir)
+            save_experiment(trainer.run_dir, False)
             raise e
 
     # 3. Generation Mode
     if args.mode in ["generate", "full"]:
+        from src.inference import Generator
         if not args.run_dir:
             print("Error: --run_dir is required for generation mode.")
             return
@@ -64,9 +66,7 @@ def main():
             config_dict = json.load(f)
             for key, value in config_dict.items():
                 # Check if the attribute exists and if it is a property (read-only)
-                is_property = isinstance(getattr(type(cfg), key, None), property)
-
-                if not is_property:
+                if not isinstance(getattr(type(cfg), key, None), property):
                     setattr(cfg, key, value)
 
         if args.force_cpu:
@@ -75,9 +75,9 @@ def main():
         # Setup seeds
         seeds = args.seeds.split(",") if args.seeds else []
         if not seeds:
-            if args.generations > 1:
-                seeds = [str(args.seed)] + [
-                    str(secrets.randbelow(1000000)) for _ in range(args.generations - 1)
+            if args.generations > 0:
+                seeds = [
+                    str(secrets.randbelow(1000000)) for _ in range(args.generations)
                 ]
             else:
                 seeds = [args.seed]
@@ -97,6 +97,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # Reproducibility
-    torch.manual_seed(1337)
     main()

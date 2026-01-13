@@ -5,7 +5,7 @@ from dataclasses import dataclass, asdict
 @dataclass
 class GPTConfig:
     # --- Default Training Parameters ---
-    tokenizer_class: str = "BiCharTokenizer"
+    tokenizer_class: str = "CharTokenizer"
     batch_size: int = (
         32  # Number of independent sequences processed in parallel per training step
     )
